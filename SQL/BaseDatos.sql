@@ -206,3 +206,31 @@ CREATE TABLE dbo.DBErrors
     , CONSTRAINT PK_DBErrors PRIMARY KEY (Id)
 )
 GO
+
+
+
+
+    
+-- SPs
+CREATE PROCEDURE dbo.sp_ObtenerError
+    @inCodigo INT,
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    BEGIN TRY
+        SELECT E.Codigo, E.Descripcion
+        FROM dbo.Error AS E
+        WHERE E.Codigo = @inCodigo
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
