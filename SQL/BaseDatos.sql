@@ -208,10 +208,9 @@ CREATE TABLE dbo.DBErrors
 GO
 
 
-
-
     
 -- SPs
+    
 CREATE PROCEDURE dbo.sp_ObtenerError
     @inCodigo INT,
     @outResultCode INT OUTPUT
@@ -234,3 +233,187 @@ BEGIN
     END CATCH
 END
 GO
+
+CREATE PROCEDURE dbo.sp_PuedeIntentarLogin
+    @inUsername VARCHAR(64),
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    BEGIN TRY
+        IF EXISTS (
+            SELECT B.Id
+            FROM dbo.BitacoraEvento AS B
+            INNER JOIN dbo.Usuario AS U ON U.Id = B.IdPostByUser
+            WHERE B.IdTipoEvento = 3
+              AND U.Username = LTRIM(RTRIM(ISNULL(@inUsername, '')))
+              AND B.PostInIP = @inPostInIP
+              AND B.PostTime >= DATEADD(MINUTE, -10, GETDATE())
+        )
+        BEGIN
+            SET @outResultCode = 50003
+            RETURN
+        END
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
+CREATE PROCEDURE dbo.sp_LoginUsuario
+    @inUsername VARCHAR(64),
+    @inPassword VARCHAR(64),
+    @inPostInIP VARCHAR(64),
+    @outIdUsuario INT OUTPUT,
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vIdUsuario INT
+    DECLARE @vPassword VARCHAR(64)
+    DECLARE @vIntentosPrevios INT
+    DECLARE @vIntentoActual INT
+    DECLARE @vCodigoError INT
+    DECLARE @vDescripcion VARCHAR(1000)
+    DECLARE @vUsername VARCHAR(64)
+
+    BEGIN TRY
+        SET @outIdUsuario = NULL
+        SET @outResultCode = 0
+        SET @vUsername = LTRIM(RTRIM(ISNULL(@inUsername, '')))
+
+        SELECT @vIdUsuario = U.Id, @vPassword = U.Password
+        FROM dbo.Usuario AS U
+        WHERE U.Username = @vUsername
+
+        IF EXISTS (
+            SELECT B.Id
+            FROM dbo.BitacoraEvento AS B
+            WHERE B.IdTipoEvento = 3
+              AND B.IdPostByUser = ISNULL(@vIdUsuario, 1)
+              AND B.PostInIP = @inPostInIP
+              AND B.PostTime >= DATEADD(MINUTE, -10, GETDATE())
+        )
+        BEGIN
+            BEGIN TRANSACTION
+                INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+                VALUES (3, 'Login deshabilitado | Username: ' + @vUsername, ISNULL(@vIdUsuario, 1), @inPostInIP)
+            COMMIT TRANSACTION
+
+            SET @outResultCode = 50003
+            RETURN
+        END
+
+        SELECT @vIntentosPrevios = COUNT(B.Id)
+        FROM dbo.BitacoraEvento AS B
+        WHERE B.IdTipoEvento = 2
+          AND B.IdPostByUser = ISNULL(@vIdUsuario, 1)
+          AND B.PostInIP = @inPostInIP
+          AND B.PostTime >= DATEADD(MINUTE, -20, GETDATE())
+
+        IF (@vIntentosPrevios >= 5)
+        BEGIN
+            BEGIN TRANSACTION
+                INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+                VALUES (3, 'Login deshabilitado | Username: ' + @vUsername, ISNULL(@vIdUsuario, 1), @inPostInIP)
+            COMMIT TRANSACTION
+
+            SET @outResultCode = 50003
+            RETURN
+        END
+
+        IF (@vIdUsuario IS NULL)
+        BEGIN
+            SET @vCodigoError = 50001
+            SET @vIntentoActual = @vIntentosPrevios + 1
+            SET @vDescripcion = 'Intento: ' + CAST(@vIntentoActual AS VARCHAR(16))
+                + ' | Codigo: ' + CAST(@vCodigoError AS VARCHAR(16))
+                + ' | Username: ' + @vUsername
+
+            BEGIN TRANSACTION
+                INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+                VALUES (2, @vDescripcion, 1, @inPostInIP)
+            COMMIT TRANSACTION
+
+            SET @outResultCode = @vCodigoError
+            RETURN
+        END
+
+        IF (@vPassword <> ISNULL(@inPassword, ''))
+        BEGIN
+            SET @vCodigoError = 50002
+            SET @vIntentoActual = @vIntentosPrevios + 1
+            SET @vDescripcion = 'Intento: ' + CAST(@vIntentoActual AS VARCHAR(16))
+                + ' | Codigo: ' + CAST(@vCodigoError AS VARCHAR(16))
+                + ' | Username: ' + @vUsername
+
+            BEGIN TRANSACTION
+                INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+                VALUES (2, @vDescripcion, @vIdUsuario, @inPostInIP)
+            COMMIT TRANSACTION
+
+            SET @outResultCode = @vCodigoError
+            RETURN
+        END
+
+        BEGIN TRANSACTION
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+            VALUES (1, 'Exitoso', @vIdUsuario, @inPostInIP)
+        COMMIT TRANSACTION
+
+        SET @outIdUsuario = @vIdUsuario
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
+CREATE PROCEDURE dbo.sp_LogoutUsuario
+    @inIdUsuario INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    BEGIN TRY
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdUsuario)
+        BEGIN
+            SET @outResultCode = 50017
+            RETURN
+        END
+
+        BEGIN TRANSACTION
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+            VALUES (4, 'Logout', @inIdUsuario, @inPostInIP)
+        COMMIT TRANSACTION
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
