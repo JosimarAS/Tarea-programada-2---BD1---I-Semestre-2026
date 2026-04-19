@@ -417,3 +417,114 @@ BEGIN
 END
 GO
 
+
+
+CREATE PROCEDURE dbo.sp_ListarPuestos
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    BEGIN TRY
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+        BEGIN
+            SET @outResultCode = 50001
+            RETURN
+        END
+
+        INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+        VALUES (11, 'Consulta catalogo: Puesto', @inIdPostByUser, @inPostInIP)
+
+        SELECT P.Id, P.Nombre, P.SalarioxHora
+        FROM dbo.Puesto AS P
+        ORDER BY P.Nombre ASC
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
+CREATE PROCEDURE dbo.sp_ListarEmpleados
+    @inFiltro VARCHAR(128),
+    @inTipoFiltro VARCHAR(16),
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vFiltro VARCHAR(128)
+    DECLARE @vTipoFiltro VARCHAR(16)
+    DECLARE @vDescripcion VARCHAR(1000)
+
+    BEGIN TRY
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+        BEGIN
+            SET @outResultCode = 50001
+            RETURN
+        END
+
+        SET @vFiltro = LTRIM(RTRIM(ISNULL(@inFiltro, '')))
+        SET @vTipoFiltro = LTRIM(RTRIM(ISNULL(@inTipoFiltro, '')))
+
+        IF (@vTipoFiltro NOT IN ('', 'nombre', 'cedula'))
+        BEGIN
+            SET @outResultCode = 50008
+            RETURN
+        END
+
+        IF (@vTipoFiltro = 'nombre')
+        BEGIN
+            SET @vDescripcion = 'Filtro nombre: ' + @vFiltro
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+            VALUES (11, @vDescripcion, @inIdPostByUser, @inPostInIP)
+        END
+
+        IF (@vTipoFiltro = 'cedula')
+        BEGIN
+            SET @vDescripcion = 'Filtro cedula: ' + @vFiltro
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+            VALUES (12, @vDescripcion, @inIdPostByUser, @inPostInIP)
+        END
+
+        IF (@vTipoFiltro = '')
+        BEGIN
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+            VALUES (11, 'Consulta general de empleados', @inIdPostByUser, @inPostInIP)
+        END
+
+        SELECT E.Id,
+               E.ValorDocumentoIdentidad,
+               E.Nombre,
+               E.FechaContratacion,
+               E.SaldoVacaciones,
+               P.Nombre AS NombrePuesto
+        FROM dbo.Empleado AS E
+        INNER JOIN dbo.Puesto AS P ON P.Id = E.IdPuesto
+        WHERE E.EsActivo = 1
+          AND (
+              @vTipoFiltro = ''
+              OR (@vTipoFiltro = 'nombre' AND E.Nombre LIKE '%' + @vFiltro + '%')
+              OR (@vTipoFiltro = 'cedula' AND E.ValorDocumentoIdentidad LIKE '%' + @vFiltro + '%')
+          )
+        ORDER BY E.Nombre ASC
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
