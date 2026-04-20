@@ -1,11 +1,24 @@
 const express = require('express');
 const sql = require('mssql');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 app.use(express.json());
 app.use(express.static('public'));
-const dbConfig = { server: 'localhost', database: 'ControlVacacionesDB', user: 'developer_tarea2', password: 'Tarea2_2026!', options: { trustServerCertificate: true, encrypt: false } };
-async function getPool(){ return sql.connect(dbConfig); }
+
+const dbConfig = {
+  server: 'localhost',
+  database: 'ControlVacacionesDB',
+  user: 'developer_tarea2',
+  password: 'Tarea2_2026!',
+  options: { trustServerCertificate: true, encrypt: false }
+};
+
+async function getPool() {
+  return sql.connect(dbConfig);
+}
+
 app.post('/api/auth/login', async (req, res) => {
   const pool = await getPool();
   const result = await pool.request()
@@ -17,17 +30,16 @@ app.post('/api/auth/login', async (req, res) => {
     .execute('dbo.sp_LoginUsuario');
   res.json(result.output);
 });
-app.post('/api/auth/logout', async (req, res) => {
+
+app.get('/api/puestos', async (req, res) => {
   const pool = await getPool();
   const result = await pool.request()
-    .input('inIdUsuario', sql.Int, req.body.idUsuario)
+    .input('inIdUsuario', sql.Int, Number(req.query.idUsuario || 1))
     .input('inPostInIP', sql.VarChar(64), req.ip)
     .output('outResultCode', sql.Int)
-    .execute('dbo.sp_LogoutUsuario');
-  res.json(result.output);
+    .execute('dbo.sp_ListarPuestos');
+  res.json({ puestos: result.recordset, codigo: result.output.outResultCode });
 });
-app.listen(PORT, () => console.log(`Servidor en http://localhost:${PORT}`));
-
 
 app.get('/api/empleados', async (req, res) => {
   const pool = await getPool();
@@ -43,3 +55,54 @@ app.get('/api/empleados', async (req, res) => {
   res.json({ empleados: result.recordset, codigo: result.output.outResultCode });
 });
 
+app.get('/api/empleados/:id', async (req, res) => {
+  const pool = await getPool();
+  const result = await pool.request()
+    .input('inIdEmpleado', sql.Int, Number(req.params.id))
+    .input('inIdUsuario', sql.Int, Number(req.query.idUsuario || 1))
+    .input('inPostInIP', sql.VarChar(64), req.ip)
+    .output('outResultCode', sql.Int)
+    .execute('dbo.sp_ObtenerEmpleado');
+  res.json({ empleado: result.recordset[0], codigo: result.output.outResultCode });
+});
+
+app.post('/api/empleados', async (req, res) => {
+  const pool = await getPool();
+  const result = await pool.request()
+    .input('inValorDocumentoIdentidad', sql.VarChar(32), req.body.valorDocumentoIdentidad)
+    .input('inNombre', sql.VarChar(128), req.body.nombre)
+    .input('inIdPuesto', sql.Int, Number(req.body.idPuesto))
+    .input('inFechaContratacion', sql.Date, req.body.fechaContratacion)
+    .input('inIdUsuario', sql.Int, Number(req.body.idUsuario))
+    .input('inPostInIP', sql.VarChar(64), req.ip)
+    .output('outResultCode', sql.Int)
+    .execute('dbo.sp_InsertarEmpleado');
+  res.json(result.output);
+});
+
+app.put('/api/empleados/:id', async (req, res) => {
+  const pool = await getPool();
+  const result = await pool.request()
+    .input('inIdEmpleado', sql.Int, Number(req.params.id))
+    .input('inValorDocumentoIdentidad', sql.VarChar(32), req.body.valorDocumentoIdentidad)
+    .input('inNombre', sql.VarChar(128), req.body.nombre)
+    .input('inIdPuesto', sql.Int, Number(req.body.idPuesto))
+    .input('inIdUsuario', sql.Int, Number(req.body.idUsuario))
+    .input('inPostInIP', sql.VarChar(64), req.ip)
+    .output('outResultCode', sql.Int)
+    .execute('dbo.sp_ActualizarEmpleado');
+  res.json(result.output);
+});
+
+app.delete('/api/empleados/:id', async (req, res) => {
+  const pool = await getPool();
+  const result = await pool.request()
+    .input('inIdEmpleado', sql.Int, Number(req.params.id))
+    .input('inIdUsuario', sql.Int, Number(req.query.idUsuario || 1))
+    .input('inPostInIP', sql.VarChar(64), req.ip)
+    .output('outResultCode', sql.Int)
+    .execute('dbo.sp_EliminarEmpleado');
+  res.json(result.output);
+});
+
+app.listen(PORT, () => console.log(`Servidor fase 06 en http://localhost:${PORT}`));
