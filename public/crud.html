@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+    <head><meta charset="utf-8">
+        <title>Empleados</title>
+    </head>
+    <body>
+        
+        <h1>Empleados</h1>
+        <input id="f" placeholder="Filtro">
+        <button onclick="buscar()">Filtrar</button><pre id="r">
+        </pre>
+        <script>
+        
+        async function buscar(){const res=await fetch('/api/empleados?filtro='+encodeURIComponent(f.value)+'&idUsuario=1');r.textContent=JSON.stringify(await res.json(),null,2)}
+
+        </script>
+        
+    </body>
+    
+</html>
+
