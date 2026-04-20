@@ -1,33 +1,59 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Login</title>
+  <title>Control Vacaciones</title>
 </head>
 <body>
-  <h1>Login</h1>
-  
-  <input id="u" placeholder="Usuario">
-  <input id="p" placeholder="Contraseña" type="password">
-  <button onclick="login()">Ingresar</button>
-  
-  <pre id="r"></pre>
+  <h1>Control de vacaciones</h1>
+
+
+  <section>
+    <h2>Login</h2>
+    <input id="usuario" placeholder="Usuario" value="mgarrison">
+    <input id="clave" placeholder="Contrasena" type="password" value=")*2LnSr^lk">
+    <button onclick="login()">Ingresar</button>
+  </section>
+
+  <section>
+    <h2>Empleados</h2>
+    <input id="filtro" placeholder="Filtro por nombre o documento">
+    <button onclick="buscar()">Filtrar</button>
+    <button onclick="crear()">Crear empleado de prueba</button>
+    <pre id="salida"></pre>
+  </section>
 
   <script>
+    let idUsuario = 1;
     async function login() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: usuario.value, password: clave.value })
+      });
+      const data = await res.json();
+      idUsuario = data.outIdUsuario || idUsuario;
+      salida.textContent = JSON.stringify(data, null, 2);
+    }
+
+    async function buscar() {
+      const res = await fetch('/api/empleados?filtro=' + encodeURIComponent(filtro.value) + '&idUsuario=' + idUsuario);
+      salida.textContent = JSON.stringify(await res.json(), null, 2);
+    }
+
+    async function crear() {
+      const res = await fetch('/api/empleados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: u.value,
-          password: p.value
+          valorDocumentoIdentidad: '123456789',
+          nombre: 'Empleado Prueba',
+          idPuesto: 1,
+          fechaContratacion: '2024-04-20',
+          idUsuario
         })
       });
-
-      const data = await res.json();
-      r.textContent = JSON.stringify(data, null, 2);
+      salida.textContent = JSON.stringify(await res.json(), null, 2);
     }
   </script>
 </body>
