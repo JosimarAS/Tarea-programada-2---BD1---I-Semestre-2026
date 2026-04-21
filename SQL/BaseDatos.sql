@@ -452,6 +452,8 @@ BEGIN
 END
 GO
 
+-- SPs CRUD Empleado
+
 CREATE PROCEDURE dbo.sp_ListarEmpleados
     @inFiltro VARCHAR(128),
     @inTipoFiltro VARCHAR(16),
@@ -932,3 +934,207 @@ BEGIN
     END CATCH
 END
 GO
+
+-- SPs de movimientos
+            
+CREATE PROCEDURE dbo.sp_ListarMovimientos
+    @inIdEmpleado INT,
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vDescripcion VARCHAR(1000)
+    DECLARE @vValorDocumentoIdentidad VARCHAR(32)
+    DECLARE @vNombre VARCHAR(128)
+    DECLARE @vSaldoVacaciones MONEY
+
+    BEGIN TRY
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+        BEGIN
+            SET @outResultCode = 50001
+            RETURN
+        END
+
+        SELECT @vValorDocumentoIdentidad = E.ValorDocumentoIdentidad,
+               @vNombre = E.Nombre,
+               @vSaldoVacaciones = E.SaldoVacaciones
+        FROM dbo.Empleado AS E
+        WHERE E.Id = @inIdEmpleado
+          AND E.EsActivo = 1
+
+        IF (@vValorDocumentoIdentidad IS NULL)
+        BEGIN
+            SET @outResultCode = 50008
+            RETURN
+        END
+
+        SET @vDescripcion = 'Documento: ' + @vValorDocumentoIdentidad
+            + ' | Nombre: ' + @vNombre
+            + ' | Saldo actual: ' + CONVERT(VARCHAR(32), @vSaldoVacaciones)
+
+        INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+        VALUES (12, @vDescripcion, @inIdPostByUser, @inPostInIP)
+
+        SELECT E.ValorDocumentoIdentidad,
+               E.Nombre AS NombreEmpleado,
+               E.SaldoVacaciones,
+               M.Fecha,
+               T.Nombre AS NombreTipoMovimiento,
+               M.Monto,
+               M.NuevoSaldo,
+               U.Username AS NombreUsuario,
+               M.PostInIP,
+               M.PostTime
+        FROM dbo.Movimiento AS M
+        INNER JOIN dbo.Empleado AS E ON E.Id = M.IdEmpleado
+        INNER JOIN dbo.TipoMovimiento AS T ON T.Id = M.IdTipoMovimiento
+        INNER JOIN dbo.Usuario AS U ON U.Id = M.IdPostByUser
+        WHERE M.IdEmpleado = @inIdEmpleado
+        ORDER BY M.Fecha DESC, M.PostTime DESC, M.Id DESC
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
+CREATE PROCEDURE dbo.sp_InsertarMovimiento
+    @inIdEmpleado INT,
+    @inIdTipoMovimiento INT,
+    @inFecha DATE,
+    @inMonto MONEY,
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @inPostTime DATETIME = NULL,
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vValorDocumentoIdentidad VARCHAR(32)
+    DECLARE @vNombreEmpleado VARCHAR(128)
+    DECLARE @vSaldoActual MONEY
+    DECLARE @vNuevoSaldo MONEY
+    DECLARE @vNombreTipoMovimiento VARCHAR(64)
+    DECLARE @vTipoAccion VARCHAR(16)
+    DECLARE @vDescripcionError VARCHAR(256)
+    DECLARE @vDescripcionBitacora VARCHAR(1000)
+    DECLARE @vPostTime DATETIME
+
+    BEGIN TRY
+        SET @outResultCode = 0
+        SET @vPostTime = ISNULL(@inPostTime, GETDATE())
+
+        SELECT @vValorDocumentoIdentidad = E.ValorDocumentoIdentidad,
+               @vNombreEmpleado = E.Nombre,
+               @vSaldoActual = E.SaldoVacaciones
+        FROM dbo.Empleado AS E
+        WHERE E.Id = @inIdEmpleado
+          AND E.EsActivo = 1
+
+        SELECT @vNombreTipoMovimiento = T.Nombre,
+               @vTipoAccion = T.TipoAccion
+        FROM dbo.TipoMovimiento AS T
+        WHERE T.Id = @inIdTipoMovimiento
+
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+            SET @outResultCode = 50001
+        ELSE IF (@vValorDocumentoIdentidad IS NULL)
+            SET @outResultCode = 50008
+        ELSE IF (@vNombreTipoMovimiento IS NULL)
+            SET @outResultCode = 50008
+        ELSE IF (@inFecha IS NULL)
+            SET @outResultCode = 50008
+        ELSE IF (@inMonto IS NULL OR @inMonto <= 0)
+            SET @outResultCode = 50011
+        ELSE
+        BEGIN
+            IF (@vTipoAccion = 'Credito')
+                SET @vNuevoSaldo = @vSaldoActual + @inMonto
+            ELSE
+                SET @vNuevoSaldo = @vSaldoActual - @inMonto
+
+            IF (@vNuevoSaldo < 0)
+                SET @outResultCode = 50011
+        END
+
+        IF (@outResultCode <> 0)
+        BEGIN
+            SELECT @vDescripcionError = E.Descripcion FROM dbo.Error AS E WHERE E.Codigo = @outResultCode
+
+            SET @vDescripcionBitacora = ISNULL(@vDescripcionError, '')
+                + ' | Documento: ' + ISNULL(@vValorDocumentoIdentidad, '')
+                + ' | Nombre: ' + ISNULL(@vNombreEmpleado, '')
+                + ' | Saldo actual: ' + CONVERT(VARCHAR(32), ISNULL(@vSaldoActual, 0))
+                + ' | Tipo movimiento: ' + ISNULL(@vNombreTipoMovimiento, '')
+                + ' | Monto: ' + CONVERT(VARCHAR(32), ISNULL(@inMonto, 0))
+
+            IF EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+            BEGIN
+                INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP, PostTime)
+                VALUES (13, @vDescripcionBitacora, @inIdPostByUser, @inPostInIP, @vPostTime)
+            END
+
+            RETURN
+        END
+
+        SET @vDescripcionBitacora = 'Documento: ' + @vValorDocumentoIdentidad
+            + ' | Nombre: ' + @vNombreEmpleado
+            + ' | Nuevo saldo: ' + CONVERT(VARCHAR(32), @vNuevoSaldo)
+            + ' | Tipo movimiento: ' + @vNombreTipoMovimiento
+            + ' | Monto: ' + CONVERT(VARCHAR(32), @inMonto)
+
+        BEGIN TRANSACTION
+            INSERT INTO dbo.Movimiento
+            (
+                IdEmpleado,
+                IdTipoMovimiento,
+                Fecha,
+                Monto,
+                NuevoSaldo,
+                IdPostByUser,
+                PostInIP,
+                PostTime
+            )
+            VALUES
+            (
+                @inIdEmpleado,
+                @inIdTipoMovimiento,
+                @inFecha,
+                @inMonto,
+                @vNuevoSaldo,
+                @inIdPostByUser,
+                @inPostInIP,
+                @vPostTime
+            )
+
+            UPDATE dbo.Empleado
+            SET SaldoVacaciones = @vNuevoSaldo
+            WHERE Id = @inIdEmpleado
+              AND EsActivo = 1
+
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP, PostTime)
+            VALUES (14, @vDescripcionBitacora, @inIdPostByUser, @inPostInIP, @vPostTime)
+        COMMIT TRANSACTION
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
