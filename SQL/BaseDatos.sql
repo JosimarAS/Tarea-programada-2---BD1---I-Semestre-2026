@@ -528,3 +528,407 @@ BEGIN
     END CATCH
 END
 GO
+
+
+
+CREATE PROCEDURE dbo.sp_ObtenerEmpleado
+    @inIdEmpleado INT,
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vDescripcion VARCHAR(1000)
+    DECLARE @vValorDocumentoIdentidad VARCHAR(32)
+    DECLARE @vNombre VARCHAR(128)
+    DECLARE @vNombrePuesto VARCHAR(64)
+    DECLARE @vSaldoVacaciones MONEY
+
+    BEGIN TRY
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+        BEGIN
+            SET @outResultCode = 50001
+            RETURN
+        END
+
+        SELECT @vValorDocumentoIdentidad = E.ValorDocumentoIdentidad,
+               @vNombre = E.Nombre,
+               @vNombrePuesto = P.Nombre,
+               @vSaldoVacaciones = E.SaldoVacaciones
+        FROM dbo.Empleado AS E
+        INNER JOIN dbo.Puesto AS P ON P.Id = E.IdPuesto
+        WHERE E.Id = @inIdEmpleado
+          AND E.EsActivo = 1
+
+        IF (@vValorDocumentoIdentidad IS NULL)
+        BEGIN
+            SET @outResultCode = 50008
+            RETURN
+        END
+
+        SET @vDescripcion = 'Documento: ' + @vValorDocumentoIdentidad
+            + ' | Nombre: ' + @vNombre
+            + ' | Puesto: ' + @vNombrePuesto
+            + ' | Saldo: ' + CONVERT(VARCHAR(32), @vSaldoVacaciones)
+
+        INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+        VALUES (12, @vDescripcion, @inIdPostByUser, @inPostInIP)
+
+        SELECT E.Id,
+               E.IdPuesto,
+               E.ValorDocumentoIdentidad,
+               E.Nombre,
+               E.FechaContratacion,
+               E.SaldoVacaciones,
+               E.EsActivo,
+               P.Nombre AS NombrePuesto
+        FROM dbo.Empleado AS E
+        INNER JOIN dbo.Puesto AS P ON P.Id = E.IdPuesto
+        WHERE E.Id = @inIdEmpleado
+          AND E.EsActivo = 1
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
+CREATE PROCEDURE dbo.sp_InsertarEmpleado
+    @inValorDocumentoIdentidad VARCHAR(32),
+    @inNombre VARCHAR(128),
+    @inIdPuesto INT,
+    @inFechaContratacion DATE,
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @inPostTime DATETIME = NULL,
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vValorDocumentoIdentidad VARCHAR(32)
+    DECLARE @vNombre VARCHAR(128)
+    DECLARE @vNombrePuesto VARCHAR(64)
+    DECLARE @vDescripcionError VARCHAR(256)
+    DECLARE @vDescripcionBitacora VARCHAR(1000)
+    DECLARE @vPostTime DATETIME
+
+    BEGIN TRY
+        SET @outResultCode = 0
+        SET @vValorDocumentoIdentidad = LTRIM(RTRIM(ISNULL(@inValorDocumentoIdentidad, '')))
+        SET @vNombre = LTRIM(RTRIM(ISNULL(@inNombre, '')))
+        SET @vPostTime = ISNULL(@inPostTime, GETDATE())
+
+        SELECT @vNombrePuesto = P.Nombre
+        FROM dbo.Puesto AS P
+        WHERE P.Id = @inIdPuesto
+
+        IF (@vNombre = '' OR @vNombre LIKE '%[^A-Za-zÁÉÍÓÚáéíóúÑñÜü ]%')
+            SET @outResultCode = 50009
+        ELSE IF (@vValorDocumentoIdentidad = '' OR @vValorDocumentoIdentidad LIKE '%[^0-9]%')
+            SET @outResultCode = 50010
+        ELSE IF (@vNombrePuesto IS NULL)
+            SET @outResultCode = 50008
+        ELSE IF (@inFechaContratacion IS NULL)
+            SET @outResultCode = 50008
+        ELSE IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+            SET @outResultCode = 50001
+        ELSE IF EXISTS (SELECT E.Id FROM dbo.Empleado AS E WHERE E.ValorDocumentoIdentidad = @vValorDocumentoIdentidad)
+            SET @outResultCode = 50004
+        ELSE IF EXISTS (SELECT E.Id FROM dbo.Empleado AS E WHERE E.Nombre = @vNombre)
+            SET @outResultCode = 50005
+
+        IF (@outResultCode <> 0)
+        BEGIN
+            SELECT @vDescripcionError = E.Descripcion FROM dbo.Error AS E WHERE E.Codigo = @outResultCode
+
+            SET @vDescripcionBitacora = ISNULL(@vDescripcionError, '')
+                + ' | Documento: ' + @vValorDocumentoIdentidad
+                + ' | Nombre: ' + @vNombre
+                + ' | Puesto: ' + ISNULL(@vNombrePuesto, 'Puesto no encontrado')
+
+            IF EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+            BEGIN
+                INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP, PostTime)
+                VALUES (5, @vDescripcionBitacora, @inIdPostByUser, @inPostInIP, @vPostTime)
+            END
+
+            RETURN
+        END
+
+        SET @vDescripcionBitacora = 'Documento: ' + @vValorDocumentoIdentidad
+            + ' | Nombre: ' + @vNombre
+            + ' | Puesto: ' + @vNombrePuesto
+
+        BEGIN TRANSACTION
+            INSERT INTO dbo.Empleado (IdPuesto, ValorDocumentoIdentidad, Nombre, FechaContratacion)
+            VALUES (@inIdPuesto, @vValorDocumentoIdentidad, @vNombre, @inFechaContratacion)
+
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP, PostTime)
+            VALUES (6, @vDescripcionBitacora, @inIdPostByUser, @inPostInIP, @vPostTime)
+        COMMIT TRANSACTION
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
+CREATE PROCEDURE dbo.sp_ActualizarEmpleado
+    @inIdEmpleado INT,
+    @inValorDocumentoIdentidad VARCHAR(32),
+    @inNombre VARCHAR(128),
+    @inIdPuesto INT,
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vValorDocumentoIdentidadNuevo VARCHAR(32)
+    DECLARE @vNombreNuevo VARCHAR(128)
+    DECLARE @vNombrePuestoNuevo VARCHAR(64)
+    DECLARE @vValorDocumentoIdentidadAnterior VARCHAR(32)
+    DECLARE @vNombreAnterior VARCHAR(128)
+    DECLARE @vNombrePuestoAnterior VARCHAR(64)
+    DECLARE @vSaldoVacaciones MONEY
+    DECLARE @vDescripcionError VARCHAR(256)
+    DECLARE @vDescripcionBitacora VARCHAR(1000)
+
+    BEGIN TRY
+        SET @outResultCode = 0
+        SET @vValorDocumentoIdentidadNuevo = LTRIM(RTRIM(ISNULL(@inValorDocumentoIdentidad, '')))
+        SET @vNombreNuevo = LTRIM(RTRIM(ISNULL(@inNombre, '')))
+
+        SELECT @vValorDocumentoIdentidadAnterior = E.ValorDocumentoIdentidad,
+               @vNombreAnterior = E.Nombre,
+               @vNombrePuestoAnterior = P.Nombre,
+               @vSaldoVacaciones = E.SaldoVacaciones
+        FROM dbo.Empleado AS E
+        INNER JOIN dbo.Puesto AS P ON P.Id = E.IdPuesto
+        WHERE E.Id = @inIdEmpleado
+          AND E.EsActivo = 1
+
+        SELECT @vNombrePuestoNuevo = P.Nombre
+        FROM dbo.Puesto AS P
+        WHERE P.Id = @inIdPuesto
+
+        IF (@vValorDocumentoIdentidadAnterior IS NULL)
+            SET @outResultCode = 50008
+        ELSE IF (@vNombreNuevo = '' OR @vNombreNuevo LIKE '%[^A-Za-zÁÉÍÓÚáéíóúÑñÜü ]%')
+            SET @outResultCode = 50009
+        ELSE IF (@vValorDocumentoIdentidadNuevo = '' OR @vValorDocumentoIdentidadNuevo LIKE '%[^0-9]%')
+            SET @outResultCode = 50010
+        ELSE IF (@vNombrePuestoNuevo IS NULL)
+            SET @outResultCode = 50008
+        ELSE IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+            SET @outResultCode = 50001
+        ELSE IF EXISTS (
+            SELECT E.Id
+            FROM dbo.Empleado AS E
+            WHERE E.ValorDocumentoIdentidad = @vValorDocumentoIdentidadNuevo
+              AND E.Id <> @inIdEmpleado
+        )
+            SET @outResultCode = 50006
+        ELSE IF EXISTS (
+            SELECT E.Id
+            FROM dbo.Empleado AS E
+            WHERE E.Nombre = @vNombreNuevo
+              AND E.Id <> @inIdEmpleado
+        )
+            SET @outResultCode = 50007
+
+        IF (@outResultCode <> 0)
+        BEGIN
+            SELECT @vDescripcionError = E.Descripcion FROM dbo.Error AS E WHERE E.Codigo = @outResultCode
+
+            SET @vDescripcionBitacora = ISNULL(@vDescripcionError, '')
+                + ' | Documento antes: ' + ISNULL(@vValorDocumentoIdentidadAnterior, '')
+                + ' | Nombre antes: ' + ISNULL(@vNombreAnterior, '')
+                + ' | Puesto antes: ' + ISNULL(@vNombrePuestoAnterior, '')
+                + ' | Documento despues: ' + @vValorDocumentoIdentidadNuevo
+                + ' | Nombre despues: ' + @vNombreNuevo
+                + ' | Puesto despues: ' + ISNULL(@vNombrePuestoNuevo, 'Puesto no encontrado')
+                + ' | Saldo: ' + CONVERT(VARCHAR(32), ISNULL(@vSaldoVacaciones, 0))
+
+            IF EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+            BEGIN
+                INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+                VALUES (7, @vDescripcionBitacora, @inIdPostByUser, @inPostInIP)
+            END
+
+            RETURN
+        END
+
+        SET @vDescripcionBitacora = 'Documento antes: ' + @vValorDocumentoIdentidadAnterior
+            + ' | Nombre antes: ' + @vNombreAnterior
+            + ' | Puesto antes: ' + @vNombrePuestoAnterior
+            + ' | Documento despues: ' + @vValorDocumentoIdentidadNuevo
+            + ' | Nombre despues: ' + @vNombreNuevo
+            + ' | Puesto despues: ' + @vNombrePuestoNuevo
+            + ' | Saldo: ' + CONVERT(VARCHAR(32), @vSaldoVacaciones)
+
+        BEGIN TRANSACTION
+            UPDATE dbo.Empleado
+            SET ValorDocumentoIdentidad = @vValorDocumentoIdentidadNuevo,
+                Nombre = @vNombreNuevo,
+                IdPuesto = @inIdPuesto
+            WHERE Id = @inIdEmpleado
+              AND EsActivo = 1
+
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+            VALUES (8, @vDescripcionBitacora, @inIdPostByUser, @inPostInIP)
+        COMMIT TRANSACTION
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
+CREATE PROCEDURE dbo.sp_RegistrarIntentoBorrado
+    @inIdEmpleado INT,
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vDescripcion VARCHAR(1000)
+    DECLARE @vValorDocumentoIdentidad VARCHAR(32)
+    DECLARE @vNombre VARCHAR(128)
+    DECLARE @vNombrePuesto VARCHAR(64)
+    DECLARE @vSaldoVacaciones MONEY
+
+    BEGIN TRY
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+        BEGIN
+            SET @outResultCode = 50001
+            RETURN
+        END
+
+        SELECT @vValorDocumentoIdentidad = E.ValorDocumentoIdentidad,
+               @vNombre = E.Nombre,
+               @vNombrePuesto = P.Nombre,
+               @vSaldoVacaciones = E.SaldoVacaciones
+        FROM dbo.Empleado AS E
+        INNER JOIN dbo.Puesto AS P ON P.Id = E.IdPuesto
+        WHERE E.Id = @inIdEmpleado
+          AND E.EsActivo = 1
+
+        IF (@vValorDocumentoIdentidad IS NULL)
+        BEGIN
+            SET @outResultCode = 50008
+            RETURN
+        END
+
+        SET @vDescripcion = 'Documento: ' + @vValorDocumentoIdentidad
+            + ' | Nombre: ' + @vNombre
+            + ' | Puesto: ' + @vNombrePuesto
+            + ' | Saldo: ' + CONVERT(VARCHAR(32), @vSaldoVacaciones)
+
+        BEGIN TRANSACTION
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+            VALUES (9, @vDescripcion, @inIdPostByUser, @inPostInIP)
+        COMMIT TRANSACTION
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+
+CREATE PROCEDURE dbo.sp_EliminarEmpleado
+    @inIdEmpleado INT,
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    DECLARE @vDescripcion VARCHAR(1000)
+    DECLARE @vValorDocumentoIdentidad VARCHAR(32)
+    DECLARE @vNombre VARCHAR(128)
+    DECLARE @vNombrePuesto VARCHAR(64)
+    DECLARE @vSaldoVacaciones MONEY
+
+    BEGIN TRY
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+        BEGIN
+            SET @outResultCode = 50001
+            RETURN
+        END
+
+        SELECT @vValorDocumentoIdentidad = E.ValorDocumentoIdentidad,
+               @vNombre = E.Nombre,
+               @vNombrePuesto = P.Nombre,
+               @vSaldoVacaciones = E.SaldoVacaciones
+        FROM dbo.Empleado AS E
+        INNER JOIN dbo.Puesto AS P ON P.Id = E.IdPuesto
+        WHERE E.Id = @inIdEmpleado
+          AND E.EsActivo = 1
+
+        IF (@vValorDocumentoIdentidad IS NULL)
+        BEGIN
+            SET @outResultCode = 50008
+            RETURN
+        END
+
+        SET @vDescripcion = 'Documento: ' + @vValorDocumentoIdentidad
+            + ' | Nombre: ' + @vNombre
+            + ' | Puesto: ' + @vNombrePuesto
+            + ' | Saldo: ' + CONVERT(VARCHAR(32), @vSaldoVacaciones)
+
+        BEGIN TRANSACTION
+            UPDATE dbo.Empleado
+            SET EsActivo = 0
+            WHERE Id = @inIdEmpleado
+              AND EsActivo = 1
+
+            INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+            VALUES (10, @vDescripcion, @inIdPostByUser, @inPostInIP)
+        COMMIT TRANSACTION
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
