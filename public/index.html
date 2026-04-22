@@ -2,58 +2,848 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Control Vacaciones</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Vacaciones</title>
+  <style>
+    body {
+      margin: 0;
+      background: #f4f4f4;
+      font-family: Arial, sans-serif;
+      color: #222;
+    }
+
+    header {
+      background: #243447;
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    main {
+      padding: 24px;
+    }
+
+    h1, h2, h3 {
+      margin-top: 0;
+    }
+
+    .vista {
+      display: none;
+    }
+
+    .vista.activa {
+      display: block;
+    }
+
+    .panel {
+      background: white;
+      border: 1px solid #cfcfcf;
+      padding: 18px;
+      margin-bottom: 18px;
+      max-width: 1100px;
+    }
+
+    .panel-corto {
+      max-width: 430px;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-top: 12px;
+    }
+
+    input, select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px;
+      margin-top: 4px;
+      border: 1px solid #999;
+      border-radius: 3px;
+    }
+
+    button {
+      padding: 7px 12px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border: 1px solid #777;
+      border-radius: 3px;
+      background: #eeeeee;
+    }
+
+    button.primario {
+      background: #243447;
+      color: white;
+      border-color: #243447;
+    }
+
+    button.peligro {
+      background: #b3261e;
+      color: white;
+      border-color: #b3261e;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .fila {
+      display: flex;
+      gap: 10px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+
+    .fila > div {
+      min-width: 220px;
+    }
+
+    .mensaje {
+      padding: 10px;
+      margin: 10px 0;
+      border: 1px solid #bbb;
+      background: #fafafa;
+      display: none;
+    }
+
+    .mensaje.error {
+      display: block;
+      background: #ffe5e5;
+      border-color: #cc7777;
+      color: #7a1515;
+    }
+
+    .mensaje.ok {
+      display: block;
+      background: #e8f7e8;
+      border-color: #78aa78;
+      color: #174d17;
+    }
+
+    .error-campo {
+      color: #b3261e;
+      font-size: 0.86rem;
+      margin-top: 3px;
+      min-height: 18px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: white;
+      margin-top: 14px;
+    }
+
+    th, td {
+      border: 1px solid #999;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #dddddd;
+    }
+
+    .acciones {
+      white-space: nowrap;
+    }
+
+    .texto-secundario {
+      color: #666;
+      font-size: 0.92rem;
+    }
+
+    .tarjeta-datos {
+      line-height: 1.8;
+    }
+  </style>
 </head>
 <body>
-  <h1>Control de vacaciones</h1>
+  <header>
+    <div>
+      <strong>Control de Vacaciones</strong>
+      <span class="texto-secundario" id="usuario-header"></span>
+    </div>
+    <button id="btn-logout" onclick="logout()" style="display:none;">Logout</button>
+  </header>
 
+  <main>
+    <div id="mensaje-global" class="mensaje"></div>
 
-  <section>
-    <h2>Login</h2>
-    <input id="usuario" placeholder="Usuario" value="mgarrison">
-    <input id="clave" placeholder="Contrasena" type="password" value=")*2LnSr^lk">
-    <button onclick="login()">Ingresar</button>
-  </section>
+    <section id="vista-login" class="vista activa">
+      <div class="panel panel-corto">
+        <h1>Login</h1>
 
-  <section>
-    <h2>Empleados</h2>
-    <input id="filtro" placeholder="Filtro por nombre o documento">
-    <button onclick="buscar()">Filtrar</button>
-    <button onclick="crear()">Crear empleado de prueba</button>
-    <pre id="salida"></pre>
-  </section>
+        <label>Usuario</label>
+        <input type="text" id="login-username" onblur="consultarEstadoLogin()" placeholder="Ej: mgarrison">
+        <div class="error-campo" id="error-login-username"></div>
+
+        <label>Contraseña</label>
+        <input type="password" id="login-password" placeholder="Digite la contraseña">
+        <div class="error-campo" id="error-login-password"></div>
+
+        <button class="primario" id="btn-login" onclick="login()">Ingresar</button>
+      </div>
+    </section>
+
+    <section id="vista-principal" class="vista">
+      <div class="panel">
+        <h1>Empleados</h1>
+        <p class="texto-secundario">Los IDs internos se usan únicamente para seleccionar registros; no se muestran al usuario.</p>
+
+        <div class="fila">
+          <div style="flex:1; min-width: 280px;">
+            <label>Filtro por nombre o documento</label>
+            <input type="text" id="filtro-empleado" placeholder="Ej: Perez o 603">
+          </div>
+          <div>
+            <button class="primario" onclick="cargarEmpleados()">Filtrar</button>
+            <button onclick="limpiarFiltro()">Limpiar</button>
+            <button onclick="mostrarInsertarEmpleado()">Insertar empleado</button>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Nombre</th>
+              <th>Puesto</th>
+              <th>Saldo vacaciones</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-empleados"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="vista-empleado-form" class="vista">
+      <div class="panel panel-corto">
+        <h1 id="titulo-empleado-form">Empleado</h1>
+
+        <input type="hidden" id="empleado-id">
+
+        <label>Valor documento identidad</label>
+        <input type="text" id="empleado-documento" placeholder="Solo números">
+        <div class="error-campo" id="error-empleado-documento"></div>
+
+        <label>Nombre</label>
+        <input type="text" id="empleado-nombre" placeholder="Solo letras y espacios">
+        <div class="error-campo" id="error-empleado-nombre"></div>
+
+        <label>Puesto</label>
+        <select id="empleado-puesto"></select>
+        <div class="error-campo" id="error-empleado-puesto"></div>
+
+        <div id="bloque-fecha-contratacion">
+          <label>Fecha contratación</label>
+          <input type="date" id="empleado-fecha-contratacion">
+          <div class="error-campo" id="error-empleado-fecha"></div>
+        </div>
+
+        <div class="fila" style="margin-top: 14px;">
+          <button class="primario" onclick="guardarEmpleado()">Guardar</button>
+          <button onclick="volverPrincipal()">Regresar</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="vista-empleado-consulta" class="vista">
+      <div class="panel panel-corto">
+        <h1>Consulta de empleado</h1>
+        <div id="detalle-empleado" class="tarjeta-datos"></div>
+        <button onclick="volverPrincipal()">Regresar</button>
+      </div>
+    </section>
+
+    <section id="vista-movimientos" class="vista">
+      <div class="panel">
+        <h1>Movimientos</h1>
+        <div id="encabezado-movimientos" class="tarjeta-datos"></div>
+        <button class="primario" onclick="mostrarInsertarMovimiento()">Insertar movimiento</button>
+        <button onclick="volverPrincipal()">Regresar</button>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th>Monto</th>
+              <th>Nuevo saldo</th>
+              <th>Usuario</th>
+              <th>IP</th>
+              <th>PostTime</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-movimientos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="vista-movimiento-form" class="vista">
+      <div class="panel panel-corto">
+        <h1>Insertar movimiento</h1>
+        <div id="datos-movimiento-empleado" class="tarjeta-datos"></div>
+
+        <label>Tipo de movimiento</label>
+        <select id="movimiento-tipo"></select>
+        <div class="error-campo" id="error-movimiento-tipo"></div>
+
+        <label>Fecha</label>
+        <input type="date" id="movimiento-fecha">
+        <div class="error-campo" id="error-movimiento-fecha"></div>
+
+        <label>Monto</label>
+        <input type="text" id="movimiento-monto" placeholder="Ej: 2">
+        <div class="error-campo" id="error-movimiento-monto"></div>
+
+        <button class="primario" onclick="guardarMovimiento()">Guardar movimiento</button>
+        <button onclick="listarMovimientos(empleadoSeleccionado.Id)">Regresar</button>
+      </div>
+    </section>
+  </main>
 
   <script>
-    let idUsuario = 1;
-    async function login() {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: usuario.value, password: clave.value })
+    var usuarioActual = JSON.parse(localStorage.getItem('usuarioActual') || 'null');
+    var puestos = [];
+    var tiposMovimiento = [];
+    var empleadoSeleccionado = null;
+    var modoEmpleado = 'insertar';
+
+    function mostrarMensaje(texto, tipo) {
+      var div = document.getElementById('mensaje-global');
+      div.textContent = texto;
+      div.className = 'mensaje ' + tipo;
+    }
+
+    function limpiarMensaje() {
+      var div = document.getElementById('mensaje-global');
+      div.textContent = '';
+      div.className = 'mensaje';
+    }
+
+    function mostrarVista(id) {
+      limpiarMensaje();
+      var vistas = document.querySelectorAll('.vista');
+
+      for (var i = 0; i < vistas.length; i++) {
+        vistas[i].classList.remove('activa');
+      }
+
+      document.getElementById(id).classList.add('activa');
+      actualizarHeader();
+    }
+
+    function actualizarHeader() {
+      var span = document.getElementById('usuario-header');
+      var btn = document.getElementById('btn-logout');
+
+      if (usuarioActual) {
+        span.textContent = ' | Usuario: ' + usuarioActual.username;
+        btn.style.display = 'inline-block';
+      } else {
+        span.textContent = '';
+        btn.style.display = 'none';
+      }
+    }
+
+    function urlConUsuario(url) {
+      var separador = url.indexOf('?') >= 0 ? '&' : '?';
+      return url + separador + 'idUsuario=' + encodeURIComponent(usuarioActual.id);
+    }
+
+    function fetchJson(url, opciones) {
+      return fetch(url, opciones).then(function(respuesta) {
+        return respuesta.json().then(function(datos) {
+          if (!respuesta.ok) {
+            throw datos;
+          }
+          return datos;
+        });
       });
-      const data = await res.json();
-      idUsuario = data.outIdUsuario || idUsuario;
-      salida.textContent = JSON.stringify(data, null, 2);
     }
 
-    async function buscar() {
-      const res = await fetch('/api/empleados?filtro=' + encodeURIComponent(filtro.value) + '&idUsuario=' + idUsuario);
-      salida.textContent = JSON.stringify(await res.json(), null, 2);
+    function formatoNumero(valor) {
+      return Number(valor || 0).toLocaleString('es-CR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
     }
 
-    async function crear() {
-      const res = await fetch('/api/empleados', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          valorDocumentoIdentidad: '123456789',
-          nombre: 'Empleado Prueba',
-          idPuesto: 1,
-          fechaContratacion: '2024-04-20',
-          idUsuario
+    function fechaHoy() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function limpiarErroresEmpleado() {
+      document.getElementById('error-empleado-documento').textContent = '';
+      document.getElementById('error-empleado-nombre').textContent = '';
+      document.getElementById('error-empleado-puesto').textContent = '';
+      document.getElementById('error-empleado-fecha').textContent = '';
+    }
+
+    function validarFormularioEmpleado() {
+      limpiarErroresEmpleado();
+
+      var documento = document.getElementById('empleado-documento').value.trim();
+      var nombre = document.getElementById('empleado-nombre').value.trim();
+      var idPuesto = document.getElementById('empleado-puesto').value;
+      var fecha = document.getElementById('empleado-fecha-contratacion').value;
+      var valido = true;
+
+      if (documento === '') {
+        document.getElementById('error-empleado-documento').textContent = 'El documento es obligatorio.';
+        valido = false;
+      } else if (!/^[0-9]+$/.test(documento)) {
+        document.getElementById('error-empleado-documento').textContent = 'El documento debe contener solo números.';
+        valido = false;
+      }
+
+      if (nombre === '') {
+        document.getElementById('error-empleado-nombre').textContent = 'El nombre es obligatorio.';
+        valido = false;
+      } else if (!/^[A-Za-zÁÉÍÓÚáéíóúÑñÜü ]+$/.test(nombre)) {
+        document.getElementById('error-empleado-nombre').textContent = 'El nombre solo puede contener letras y espacios.';
+        valido = false;
+      }
+
+      if (idPuesto === '') {
+        document.getElementById('error-empleado-puesto').textContent = 'Debe seleccionar un puesto.';
+        valido = false;
+      }
+
+      if (modoEmpleado === 'insertar' && fecha === '') {
+        document.getElementById('error-empleado-fecha').textContent = 'Debe seleccionar la fecha de contratación.';
+        valido = false;
+      }
+
+      return valido;
+    }
+
+    function consultarEstadoLogin() {
+      var username = document.getElementById('login-username').value.trim();
+
+      if (username === '') {
+        return;
+      }
+
+      fetchJson('/api/auth/estado-login?username=' + encodeURIComponent(username), {})
+        .then(function(datos) {
+          document.getElementById('btn-login').disabled = false;
+          document.getElementById('error-login-username').textContent = '';
         })
+        .catch(function(error) {
+          if (error.codigo === 50003) {
+            document.getElementById('btn-login').disabled = true;
+            document.getElementById('error-login-username').textContent = error.mensaje;
+          }
+        });
+    }
+
+    function login() {
+      var username = document.getElementById('login-username').value.trim();
+      var password = document.getElementById('login-password').value;
+      var valido = true;
+
+      document.getElementById('error-login-username').textContent = '';
+      document.getElementById('error-login-password').textContent = '';
+
+      if (username === '') {
+        document.getElementById('error-login-username').textContent = 'Debe digitar el usuario.';
+        valido = false;
+      }
+
+      if (password === '') {
+        document.getElementById('error-login-password').textContent = 'Debe digitar la contraseña.';
+        valido = false;
+      }
+
+      if (!valido) {
+        return;
+      }
+
+      fetchJson('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password })
+      })
+        .then(function(datos) {
+          usuarioActual = datos.usuario;
+          localStorage.setItem('usuarioActual', JSON.stringify(usuarioActual));
+          document.getElementById('login-password').value = '';
+          cargarDatosIniciales();
+        })
+        .catch(function(error) {
+          if (error.codigo === 50003) {
+            document.getElementById('btn-login').disabled = true;
+          }
+          mostrarMensaje(error.mensaje || 'No se pudo iniciar sesión.', 'error');
+        });
+    }
+
+    function logout() {
+      if (!usuarioActual) {
+        return;
+      }
+
+      fetchJson('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idUsuario: usuarioActual.id })
+      }).finally(function() {
+        usuarioActual = null;
+        localStorage.removeItem('usuarioActual');
+        mostrarVista('vista-login');
       });
-      salida.textContent = JSON.stringify(await res.json(), null, 2);
+    }
+
+    function cargarDatosIniciales() {
+      Promise.all([cargarPuestos(), cargarTiposMovimiento()])
+        .then(function() {
+          return cargarEmpleados();
+        })
+        .then(function() {
+          mostrarVista('vista-principal');
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudieron cargar los datos iniciales.', 'error');
+        });
+    }
+
+    function cargarPuestos() {
+      return fetchJson(urlConUsuario('/api/puestos'), {})
+        .then(function(datos) {
+          puestos = datos.puestos;
+          llenarSelectPuestos();
+        });
+    }
+
+    function cargarTiposMovimiento() {
+      return fetchJson(urlConUsuario('/api/tipos-movimiento'), {})
+        .then(function(datos) {
+          tiposMovimiento = datos.tiposMovimiento;
+          llenarSelectTiposMovimiento();
+        });
+    }
+
+    function llenarSelectPuestos() {
+      var select = document.getElementById('empleado-puesto');
+      select.innerHTML = '<option value="">Seleccione</option>';
+
+      for (var i = 0; i < puestos.length; i++) {
+        select.innerHTML += '<option value="' + puestos[i].Id + '">' + puestos[i].Nombre + '</option>';
+      }
+    }
+
+    function llenarSelectTiposMovimiento() {
+      var select = document.getElementById('movimiento-tipo');
+      select.innerHTML = '<option value="">Seleccione</option>';
+
+      for (var i = 0; i < tiposMovimiento.length; i++) {
+        select.innerHTML += '<option value="' + tiposMovimiento[i].Id + '">' +
+          tiposMovimiento[i].Nombre + ' (' + tiposMovimiento[i].TipoAccion + ')' +
+          '</option>';
+      }
+    }
+
+    function cargarEmpleados() {
+      var filtro = document.getElementById('filtro-empleado').value.trim();
+      var url = urlConUsuario('/api/empleados?filtro=' + encodeURIComponent(filtro));
+
+      return fetchJson(url, {})
+        .then(function(datos) {
+          var tbody = document.getElementById('tbody-empleados');
+          tbody.innerHTML = '';
+
+          if (datos.empleados.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5">No hay empleados para mostrar.</td></tr>';
+            return;
+          }
+
+          for (var i = 0; i < datos.empleados.length; i++) {
+            var emp = datos.empleados[i];
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+              '<td>' + emp.ValorDocumentoIdentidad + '</td>' +
+              '<td>' + emp.Nombre + '</td>' +
+              '<td>' + emp.NombrePuesto + '</td>' +
+              '<td>' + formatoNumero(emp.SaldoVacaciones) + '</td>' +
+              '<td class="acciones">' +
+                '<button onclick="consultarEmpleado(' + emp.Id + ')">Consultar</button>' +
+                '<button onclick="mostrarEditarEmpleado(' + emp.Id + ')">Editar</button>' +
+                '<button class="peligro" onclick="eliminarEmpleado(' + emp.Id + ')">Eliminar</button>' +
+                '<button onclick="listarMovimientos(' + emp.Id + ')">Movimientos</button>' +
+                '<button onclick="prepararMovimientoDesdeLista(' + emp.Id + ')">Nuevo mov.</button>' +
+              '</td>';
+            tbody.appendChild(tr);
+          }
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudo cargar la lista de empleados.', 'error');
+        });
+    }
+
+    function limpiarFiltro() {
+      document.getElementById('filtro-empleado').value = '';
+      cargarEmpleados();
+    }
+
+    function volverPrincipal() {
+      cargarEmpleados();
+      mostrarVista('vista-principal');
+    }
+
+    function mostrarInsertarEmpleado() {
+      modoEmpleado = 'insertar';
+      document.getElementById('titulo-empleado-form').textContent = 'Insertar empleado';
+      document.getElementById('empleado-id').value = '';
+      document.getElementById('empleado-documento').value = '';
+      document.getElementById('empleado-nombre').value = '';
+      document.getElementById('empleado-puesto').value = '';
+      document.getElementById('empleado-fecha-contratacion').value = fechaHoy();
+      document.getElementById('bloque-fecha-contratacion').style.display = 'block';
+      limpiarErroresEmpleado();
+      mostrarVista('vista-empleado-form');
+    }
+
+    function mostrarEditarEmpleado(id) {
+      modoEmpleado = 'editar';
+      fetchJson(urlConUsuario('/api/empleados/' + id), {})
+        .then(function(datos) {
+          var emp = datos.empleado;
+          document.getElementById('titulo-empleado-form').textContent = 'Editar empleado';
+          document.getElementById('empleado-id').value = emp.Id;
+          document.getElementById('empleado-documento').value = emp.ValorDocumentoIdentidad;
+          document.getElementById('empleado-nombre').value = emp.Nombre;
+          document.getElementById('empleado-puesto').value = emp.IdPuesto;
+          document.getElementById('bloque-fecha-contratacion').style.display = 'none';
+          limpiarErroresEmpleado();
+          mostrarVista('vista-empleado-form');
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudo cargar el empleado.', 'error');
+        });
+    }
+
+    function guardarEmpleado() {
+      if (!validarFormularioEmpleado()) {
+        return;
+      }
+
+      var id = document.getElementById('empleado-id').value;
+      var payload = {
+        idUsuario: usuarioActual.id,
+        valorDocumentoIdentidad: document.getElementById('empleado-documento').value.trim(),
+        nombre: document.getElementById('empleado-nombre').value.trim(),
+        idPuesto: Number(document.getElementById('empleado-puesto').value),
+        fechaContratacion: document.getElementById('empleado-fecha-contratacion').value
+      };
+
+      var url = '/api/empleados';
+      var metodo = 'POST';
+
+      if (modoEmpleado === 'editar') {
+        url = '/api/empleados/' + id;
+        metodo = 'PUT';
+      }
+
+      fetchJson(url, {
+        method: metodo,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+        .then(function(datos) {
+          mostrarMensaje(datos.mensaje, 'ok');
+          volverPrincipal();
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudo guardar el empleado.', 'error');
+        });
+    }
+
+    function consultarEmpleado(id) {
+      fetchJson(urlConUsuario('/api/empleados/' + id), {})
+        .then(function(datos) {
+          var emp = datos.empleado;
+          document.getElementById('detalle-empleado').innerHTML =
+            '<strong>Documento:</strong> ' + emp.ValorDocumentoIdentidad + '<br>' +
+            '<strong>Nombre:</strong> ' + emp.Nombre + '<br>' +
+            '<strong>Puesto:</strong> ' + emp.NombrePuesto + '<br>' +
+            '<strong>Saldo vacaciones:</strong> ' + formatoNumero(emp.SaldoVacaciones);
+          mostrarVista('vista-empleado-consulta');
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudo consultar el empleado.', 'error');
+        });
+    }
+
+    function eliminarEmpleado(id) {
+      fetchJson(urlConUsuario('/api/empleados/' + id), {})
+        .then(function(datos) {
+          var emp = datos.empleado;
+          var texto = '¿Está seguro de eliminar este empleado?\n\n' +
+            'Documento: ' + emp.ValorDocumentoIdentidad + '\n' +
+            'Nombre: ' + emp.Nombre;
+
+          if (!confirm(texto)) {
+            return fetchJson('/api/empleados/' + id + '/intento-borrado', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ idUsuario: usuarioActual.id })
+            }).then(function() {
+              mostrarMensaje('Intento de borrado registrado. El empleado no fue eliminado.', 'ok');
+            });
+          }
+
+          return fetchJson('/api/empleados/' + id, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idUsuario: usuarioActual.id })
+          }).then(function(resultado) {
+            mostrarMensaje(resultado.mensaje, 'ok');
+            cargarEmpleados();
+          });
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudo eliminar el empleado.', 'error');
+        });
+    }
+
+    function listarMovimientos(id) {
+      fetchJson(urlConUsuario('/api/empleados/' + id), {})
+        .then(function(datosEmpleado) {
+          empleadoSeleccionado = datosEmpleado.empleado;
+          return fetchJson(urlConUsuario('/api/empleados/' + id + '/movimientos'), {});
+        })
+        .then(function(datos) {
+          document.getElementById('encabezado-movimientos').innerHTML =
+            '<strong>Documento:</strong> ' + empleadoSeleccionado.ValorDocumentoIdentidad + '<br>' +
+            '<strong>Nombre:</strong> ' + empleadoSeleccionado.Nombre + '<br>' +
+            '<strong>Saldo actual:</strong> ' + formatoNumero(empleadoSeleccionado.SaldoVacaciones);
+
+          var tbody = document.getElementById('tbody-movimientos');
+          tbody.innerHTML = '';
+
+          if (datos.movimientos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7">Este empleado no tiene movimientos.</td></tr>';
+          }
+
+          for (var i = 0; i < datos.movimientos.length; i++) {
+            var mov = datos.movimientos[i];
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+              '<td>' + String(mov.Fecha).slice(0, 10) + '</td>' +
+              '<td>' + mov.NombreTipoMovimiento + '</td>' +
+              '<td>' + formatoNumero(mov.Monto) + '</td>' +
+              '<td>' + formatoNumero(mov.NuevoSaldo) + '</td>' +
+              '<td>' + mov.NombreUsuario + '</td>' +
+              '<td>' + mov.PostInIP + '</td>' +
+              '<td>' + String(mov.PostTime).replace('T', ' ').slice(0, 19) + '</td>';
+            tbody.appendChild(tr);
+          }
+
+          mostrarVista('vista-movimientos');
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudieron cargar los movimientos.', 'error');
+        });
+    }
+
+    function prepararMovimientoDesdeLista(id) {
+      fetchJson(urlConUsuario('/api/empleados/' + id), {})
+        .then(function(datos) {
+          empleadoSeleccionado = datos.empleado;
+          mostrarInsertarMovimiento();
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudo preparar el movimiento.', 'error');
+        });
+    }
+
+    function mostrarInsertarMovimiento() {
+      if (!empleadoSeleccionado) {
+        return;
+      }
+
+      document.getElementById('datos-movimiento-empleado').innerHTML =
+        '<strong>Documento:</strong> ' + empleadoSeleccionado.ValorDocumentoIdentidad + '<br>' +
+        '<strong>Nombre:</strong> ' + empleadoSeleccionado.Nombre + '<br>' +
+        '<strong>Saldo vacaciones:</strong> ' + formatoNumero(empleadoSeleccionado.SaldoVacaciones);
+
+      document.getElementById('movimiento-tipo').value = '';
+      document.getElementById('movimiento-fecha').value = fechaHoy();
+      document.getElementById('movimiento-monto').value = '';
+      document.getElementById('error-movimiento-tipo').textContent = '';
+      document.getElementById('error-movimiento-fecha').textContent = '';
+      document.getElementById('error-movimiento-monto').textContent = '';
+      mostrarVista('vista-movimiento-form');
+    }
+
+    function validarMovimiento() {
+      var valido = true;
+      var tipo = document.getElementById('movimiento-tipo').value;
+      var fecha = document.getElementById('movimiento-fecha').value;
+      var monto = document.getElementById('movimiento-monto').value.trim();
+
+      document.getElementById('error-movimiento-tipo').textContent = '';
+      document.getElementById('error-movimiento-fecha').textContent = '';
+      document.getElementById('error-movimiento-monto').textContent = '';
+
+      if (tipo === '') {
+        document.getElementById('error-movimiento-tipo').textContent = 'Debe seleccionar un tipo de movimiento.';
+        valido = false;
+      }
+
+      if (fecha === '') {
+        document.getElementById('error-movimiento-fecha').textContent = 'Debe seleccionar una fecha.';
+        valido = false;
+      }
+
+      if (monto === '') {
+        document.getElementById('error-movimiento-monto').textContent = 'Debe digitar un monto.';
+        valido = false;
+      } else if (!/^\d+(\.\d{1,2})?$/.test(monto) || Number(monto) <= 0) {
+        document.getElementById('error-movimiento-monto').textContent = 'El monto debe ser un número positivo.';
+        valido = false;
+      }
+
+      return valido;
+    }
+
+    function guardarMovimiento() {
+      if (!validarMovimiento()) {
+        return;
+      }
+
+      var payload = {
+        idUsuario: usuarioActual.id,
+        idTipoMovimiento: Number(document.getElementById('movimiento-tipo').value),
+        fecha: document.getElementById('movimiento-fecha').value,
+        monto: Number(document.getElementById('movimiento-monto').value.trim())
+      };
+
+      fetchJson('/api/empleados/' + empleadoSeleccionado.Id + '/movimientos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+        .then(function(datos) {
+          mostrarMensaje(datos.mensaje, 'ok');
+          listarMovimientos(empleadoSeleccionado.Id);
+        })
+        .catch(function(error) {
+          mostrarMensaje(error.mensaje || 'No se pudo insertar el movimiento.', 'error');
+        });
+    }
+
+    if (usuarioActual) {
+      cargarDatosIniciales();
+    } else {
+      actualizarHeader();
     }
   </script>
 </body>
