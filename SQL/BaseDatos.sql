@@ -395,7 +395,7 @@ BEGIN
     BEGIN TRY
         IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdUsuario)
         BEGIN
-            SET @outResultCode = 50017
+            SET @outResultCode = 50001
             RETURN
         END
 
@@ -452,7 +452,40 @@ BEGIN
 END
 GO
 
--- SPs CRUD Empleado
+
+CREATE PROCEDURE dbo.sp_ListarTiposMovimiento
+    @inIdPostByUser INT,
+    @inPostInIP VARCHAR(64),
+    @outResultCode INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    BEGIN TRY
+        IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
+        BEGIN
+            SET @outResultCode = 50001
+            RETURN
+        END
+
+        INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
+        VALUES (11, 'Consulta catalogo: TipoMovimiento', @inIdPostByUser, @inPostInIP)
+
+        SELECT T.Id, T.Nombre, T.TipoAccion
+        FROM dbo.TipoMovimiento AS T
+        ORDER BY T.Nombre ASC
+
+        SET @outResultCode = 0
+    END TRY
+    BEGIN CATCH
+        INSERT INTO dbo.DBErrors (UserName, Number, State, Severity, [Line], [Procedure], [Message])
+        VALUES (SUSER_SNAME(), ERROR_NUMBER(), ERROR_STATE(), ERROR_SEVERITY(), ERROR_LINE(), ERROR_PROCEDURE(), ERROR_MESSAGE())
+
+        SET @outResultCode = 50008
+    END CATCH
+END
+GO
+    
 
 CREATE PROCEDURE dbo.sp_ListarEmpleados
     @inFiltro VARCHAR(128),
