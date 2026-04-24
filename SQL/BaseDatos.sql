@@ -1171,3 +1171,50 @@ BEGIN
 END
 GO
 
+-- Credenciales de BD
+        
+IF NOT EXISTS (SELECT L.name FROM sys.sql_logins AS L WHERE L.name = 'developer_tarea2')
+BEGIN
+    CREATE LOGIN developer_tarea2 WITH PASSWORD = 'Tarea2_2026!'
+END
+ELSE
+BEGIN
+    ALTER LOGIN developer_tarea2 WITH PASSWORD = 'Tarea2_2026!'
+END
+GO
+
+IF NOT EXISTS (SELECT P.name FROM sys.database_principals AS P WHERE P.name = 'developer_tarea2')
+BEGIN
+    CREATE USER developer_tarea2 FOR LOGIN developer_tarea2
+END
+GO
+
+IF NOT EXISTS (
+    SELECT DRM.member_principal_id
+    FROM sys.database_role_members AS DRM
+    INNER JOIN sys.database_principals AS R ON R.principal_id = DRM.role_principal_id
+    INNER JOIN sys.database_principals AS M ON M.principal_id = DRM.member_principal_id
+    WHERE R.name = 'db_datareader'
+      AND M.name = 'developer_tarea2'
+)
+BEGIN
+    ALTER ROLE db_datareader ADD MEMBER developer_tarea2
+END
+GO
+
+IF NOT EXISTS (
+    SELECT DRM.member_principal_id
+    FROM sys.database_role_members AS DRM
+    INNER JOIN sys.database_principals AS R ON R.principal_id = DRM.role_principal_id
+    INNER JOIN sys.database_principals AS M ON M.principal_id = DRM.member_principal_id
+    WHERE R.name = 'db_datawriter'
+      AND M.name = 'developer_tarea2'
+)
+BEGIN
+    ALTER ROLE db_datawriter ADD MEMBER developer_tarea2
+END
+GO
+
+GRANT EXECUTE TO developer_tarea2
+GO
+
