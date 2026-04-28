@@ -12,10 +12,6 @@ USE ControlVacacionesDB
 GO
 
     
--- Limpiar ya existentes
-
--- SPs (Faltan de hacer)
-    
 IF OBJECT_ID(N'dbo.sp_InsertarMovimiento', N'P') IS NOT NULL
     DROP PROCEDURE dbo.sp_InsertarMovimiento
 GO
@@ -154,10 +150,19 @@ CREATE TABLE dbo.Empleado
     , EsActivo BIT NOT NULL CONSTRAINT DF_Empleado_EsActivo DEFAULT (1)
     , CONSTRAINT PK_Empleado PRIMARY KEY (Id)
     , CONSTRAINT FK_Empleado_Puesto FOREIGN KEY (IdPuesto) REFERENCES dbo.Puesto (Id)
-    , CONSTRAINT UQ_Empleado_ValorDocumentoIdentidad UNIQUE (ValorDocumentoIdentidad)
-    , CONSTRAINT UQ_Empleado_Nombre UNIQUE (Nombre)
 )
 GO
+
+CREATE UNIQUE INDEX IX_Empleado_Doc
+    ON dbo.Empleado (ValorDocumentoIdentidad)
+    WHERE EsActivo = 1
+GO
+
+CREATE UNIQUE INDEX IX_Empleado_Nombre
+    ON dbo.Empleado (Nombre)
+    WHERE EsActivo = 1
+GO
+
 
 CREATE TABLE dbo.Movimiento
 (
@@ -434,9 +439,6 @@ BEGIN
             RETURN
         END
 
-        INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
-        VALUES (11, 'Consulta catalogo: Puesto', @inIdPostByUser, @inPostInIP)
-
         SELECT P.Id, P.Nombre, P.SalarioxHora
         FROM dbo.Puesto AS P
         ORDER BY P.Nombre ASC
@@ -467,9 +469,6 @@ BEGIN
             SET @outResultCode = 50001
             RETURN
         END
-
-        INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
-        VALUES (11, 'Consulta catalogo: TipoMovimiento', @inIdPostByUser, @inPostInIP)
 
         SELECT T.Id, T.Nombre, T.TipoAccion
         FROM dbo.TipoMovimiento AS T
@@ -575,7 +574,6 @@ AS
 BEGIN
     SET NOCOUNT ON
 
-    DECLARE @vDescripcion VARCHAR(1000)
     DECLARE @vValorDocumentoIdentidad VARCHAR(32)
     DECLARE @vNombre VARCHAR(128)
     DECLARE @vNombrePuesto VARCHAR(64)
@@ -602,14 +600,6 @@ BEGIN
             SET @outResultCode = 50008
             RETURN
         END
-
-        SET @vDescripcion = 'Documento: ' + @vValorDocumentoIdentidad
-            + ' | Nombre: ' + @vNombre
-            + ' | Puesto: ' + @vNombrePuesto
-            + ' | Saldo: ' + CONVERT(VARCHAR(32), @vSaldoVacaciones)
-
-        INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
-        VALUES (12, @vDescripcion, @inIdPostByUser, @inPostInIP)
 
         SELECT E.Id,
                E.IdPuesto,
@@ -675,9 +665,9 @@ BEGIN
             SET @outResultCode = 50008
         ELSE IF NOT EXISTS (SELECT U.Id FROM dbo.Usuario AS U WHERE U.Id = @inIdPostByUser)
             SET @outResultCode = 50001
-        ELSE IF EXISTS (SELECT E.Id FROM dbo.Empleado AS E WHERE E.ValorDocumentoIdentidad = @vValorDocumentoIdentidad)
+        ELSE IF EXISTS (SELECT E.Id FROM dbo.Empleado AS E WHERE E.ValorDocumentoIdentidad = @vValorDocumentoIdentidad AND E.EsActivo = 1)
             SET @outResultCode = 50004
-        ELSE IF EXISTS (SELECT E.Id FROM dbo.Empleado AS E WHERE E.Nombre = @vNombre)
+        ELSE IF EXISTS (SELECT E.Id FROM dbo.Empleado AS E WHERE E.Nombre = @vNombre AND E.EsActivo = 1)
             SET @outResultCode = 50005
 
         IF (@outResultCode <> 0)
@@ -778,6 +768,7 @@ BEGIN
             FROM dbo.Empleado AS E
             WHERE E.ValorDocumentoIdentidad = @vValorDocumentoIdentidadNuevo
               AND E.Id <> @inIdEmpleado
+              AND E.EsActivo = 1
         )
             SET @outResultCode = 50006
         ELSE IF EXISTS (
@@ -785,6 +776,7 @@ BEGIN
             FROM dbo.Empleado AS E
             WHERE E.Nombre = @vNombreNuevo
               AND E.Id <> @inIdEmpleado
+              AND E.EsActivo = 1
         )
             SET @outResultCode = 50007
 
@@ -978,8 +970,7 @@ CREATE PROCEDURE dbo.sp_ListarMovimientos
 AS
 BEGIN
     SET NOCOUNT ON
-
-    DECLARE @vDescripcion VARCHAR(1000)
+    
     DECLARE @vValorDocumentoIdentidad VARCHAR(32)
     DECLARE @vNombre VARCHAR(128)
     DECLARE @vSaldoVacaciones MONEY
@@ -1003,13 +994,6 @@ BEGIN
             SET @outResultCode = 50008
             RETURN
         END
-
-        SET @vDescripcion = 'Documento: ' + @vValorDocumentoIdentidad
-            + ' | Nombre: ' + @vNombre
-            + ' | Saldo actual: ' + CONVERT(VARCHAR(32), @vSaldoVacaciones)
-
-        INSERT INTO dbo.BitacoraEvento (IdTipoEvento, Descripcion, IdPostByUser, PostInIP)
-        VALUES (12, @vDescripcion, @inIdPostByUser, @inPostInIP)
 
         SELECT E.ValorDocumentoIdentidad,
                E.Nombre AS NombreEmpleado,
